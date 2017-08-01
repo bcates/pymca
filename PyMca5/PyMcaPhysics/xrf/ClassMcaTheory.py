@@ -39,6 +39,7 @@ from . import ConcentrationsTool
 FISX = ConcentrationsTool.FISX
 if FISX:
     FisxHelper = ConcentrationsTool.FisxHelper
+    
 from . import Elements
 from PyMca5.PyMcaMath.fitting import SpecfitFuns
 from PyMca5.PyMcaIO import ConfigDict
@@ -171,7 +172,7 @@ def make_newPyDicts(fisxDict):
                         escDict[elementfamily][line_final.split()[0]] = []
 
                     energy = fisxDict[elementfamily][layer][line]["energy"]
-                    rate = fisxDict[elementfamily][layer][line]["rate"]
+                    rate = fisxDict[elementfamily][layer][line]["ratio"]
                     label = (line_final.split()[1]).replace("_" , " ")
 
                     escDict[elementfamily][line_final.split()[0]].append([energy, rate, label])
@@ -274,6 +275,7 @@ class McaTheory(object):
         self.__lastTime = None
         self.strategyInstances = {}
         self.__toBeConfigured = False
+        self.useFisxEscape(False)
         if initdict is None:
             dirname = PyMcaDataDir.PYMCA_DATA_DIR
             initdict = os.path.join(dirname, "McaTheory.cfg")
@@ -324,6 +326,19 @@ class McaTheory(object):
         self.startFit = self.startfit
         #incompatible with multiple energies
         #Elements.registerUpdate(self._updateCallback)
+
+    def useFisxEscape(self, flag=None):
+        if flag:
+            if FisxHelper.xcom is None:
+                FisxHelper.xcom =FisxHelper.getElementsInstance()
+            xcom = FisxHelper.xcom
+            if hasattr(xcom, "setEscapeCacheEnabled"):
+                xcom.setEscapeCacheEnabled(1)
+                self.__USE_FISX_ESCAPE = True
+            else:
+                self.__USE_FISX_ESCAPE = False
+        else:
+            self.__USE_FISX_ESCAPE = False
 
     def enableOptimizedLinearFit(self):
         self._batchFlag = True
@@ -632,22 +647,19 @@ class McaTheory(object):
               self._fluoRates = [_fluoRates, _fluoRates]
               dict = self._fluoRates[0]
               fisxDict = self._fluoRates2
-              import json
-              outputfile = open('dictfile.txt', 'w')
-              f = json.dumps(fisxDict, sort_keys=True, indent=4)
-              # outputfile.write(p)
-              outputfile.write(f)
+              #import json
+              #outputfile = open('dictfile.txt', 'w')
+              #f = json.dumps(fisxDict, sort_keys=True, indent=4)
+              #outputfile.write(f)
           # p = json.dumps(pyDict, sort_keys=True, indent=4)
           # p2 =  json.dumps(dict2, sort_keys=True, indent=4)
-          f = json.dumps(fisxDict, sort_keys=True, indent=4)
+          # f = json.dumps(fisxDict, sort_keys=True, indent=4)
           # for resultItem in self._fluoRates[1:]:
           #     print(" Item ")
           #     print(json.dumps(resultItem, sort_keys=True, indent=4))
 
-          outputfile = open('dictfile.txt', 'w')
           #
           # outputfile.write(p)
-          outputfile.write(f)
           # outputfile.write(p2)
           # print ("pyDict = %s" %p)
           # print ("fisxDict = %s" %f)
@@ -731,16 +743,48 @@ class McaTheory(object):
             #Original way to get escape peaks BETHANY COMMENT
             if not USE_FISX:
                 if self.config['fit']['escapeflag']:
-                    testidx = 0
-                    for i in range(len(newpeaks)):
-                        _esc_ = Elements.getEscape([detele,1.0,1.0], newpeaks[i][1],
-                                            ethreshold=ethreshold, ithreshold=ithreshold,
-                                            nthreshold=nthreshold)
-                        PEAKS0ESCAPE[-1].append(_esc_)
-                        _nescape_ += len(_esc_)
-                        if ele == "Cr":
-                            print(ele, "PYMCA ESCAPE",  _esc_)
-                            testidx += 1
+                    if self.__USE_FISX_ESCAPE:
+                        if DEBUG:
+                            print("Using fisx escape")
+                        xcom = FisxHelper.xcom
+                        detector_composition = Elements.getMaterialMassFractions([detele],
+                                                                                 [1.0])
+                        xcom.updateEscapeCache(detector_composition,
+                                               [newpeaks[i][1] for i in range(len(newpeaks))],
+                                               energyThreshold=ethreshold,
+                                               intensityThreshold=ithreshold,
+                                               nThreshold=nthreshold)
+                        testidx = 0
+                        for i in range(len(newpeaks)):
+                            _esc_ = xcom.getEscape(detector_composition,
+                                           newpeaks[i][1],
+                                           energyThreshold=ethreshold,
+                                           intensityThreshold=ithreshold,
+                                           nThreshold=nthreshold)
+                            _esc_ = [[_esc_[x]["energy"],
+                                      _esc_[x]["rate"],
+                                       x[:-3].replace("_"," ")] for x in _esc_]
+                            _esc_ = Elements._filterPeaks(_esc_, ethreshold=ethreshold,
+                                              ithreshold=ithreshold,
+                                              nthreshold=nthreshold,
+                                               absoluteithreshold=True,
+                                               keeptotalrate=False)
+                            PEAKS0ESCAPE[-1].append(_esc_)
+                            _nescape_ += len(_esc_)
+                            if ele == "Cr":
+                                print(ele, "HYBRID PYMCA-FISX ESCAPE",  _esc_)
+                                testidx += 1
+                    else:
+                        testidx = 0
+                        for i in range(len(newpeaks)):
+                            _esc_ = Elements.getEscape([detele,1.0,1.0], newpeaks[i][1],
+                                                ethreshold=ethreshold, ithreshold=ithreshold,
+                                                nthreshold=nthreshold)
+                            PEAKS0ESCAPE[-1].append(_esc_)
+                            _nescape_ += len(_esc_)
+                            if ele == "Cr":
+                                print(ele, "PYMCA ESCAPE",  _esc_)
+                                testidx += 1
             else:
                 div2 = [escDict[fisxfamily][transition] for transition in escDict[fisxfamily].keys()]
                 div2.sort()
@@ -750,9 +794,10 @@ class McaTheory(object):
                     for i in div2:
                         _esc_ = i # [[x[0], x[1]/(division), x[2]] for x in i]
                         _esc_.sort()
-                        _esc_ = Elements._filterPeaks(_esc_, ethreshold=None,
-                                              ithreshold=None,
-                                              nthreshold=None,
+                        if 1:
+                            _esc_ = Elements._filterPeaks(_esc_, ethreshold=ethreshold,
+                                              ithreshold=ithreshold,
+                                              nthreshold=nthreshold,
                                                absoluteithreshold=True,
                                                keeptotalrate=False)
                         _nescape_ += len(_esc_)
