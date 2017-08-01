@@ -31,6 +31,7 @@ __contact__ = "sole@esrf.fr"
 __license__ = "MIT"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
 import sys
+import traceback
 from PyMca5.PyMcaGui import PyMcaQt as qt
 
 if hasattr(qt, 'QString'):
@@ -49,7 +50,7 @@ QTable = qt.QTableWidget
 from PyMca5.PyMcaPhysics.xrf import ConcentrationsTool
 from PyMca5.PyMcaPhysics.xrf import Elements
 import time
-DEBUG = 0
+DEBUG = 1
 if DEBUG:
     print("ConcentrationsWidget is in debug mode")
 
@@ -156,6 +157,7 @@ class Concentrations(qt.QWidget):
             msg = qt.QMessageBox(self)
             msg.setIcon(qt.QMessageBox.Critical)
             msg.setText("%s" % sys.exc_info()[1])
+            msg.setDetailedText(traceback.format_exc())
             msg.exec_()
 
     def closeEvent(self, event):

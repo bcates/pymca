@@ -846,10 +846,10 @@ def getEscape(matrix, energy, ethreshold=None, ithreshold=None, nthreshold = Non
                              key+' '+label.replace('*','')])
 
     return _filterPeaks(peaklist, ethreshold = ethreshold,
-                                  ithreshold = ithreshold,
-                                  nthreshold = nthreshold,
-                                  absoluteithreshold = True,
-                                  keeptotalrate = False)
+                                   ithreshold = ithreshold,
+                                   nthreshold = nthreshold,
+                                   absoluteithreshold = True,
+                                   keeptotalrate = False)
 
 
     #return outputDict

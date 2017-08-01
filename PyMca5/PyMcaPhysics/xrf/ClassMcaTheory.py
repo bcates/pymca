@@ -49,6 +49,223 @@ DEBUG = 0
 CONTINUUM_LIST = [None,'Constant','Linear','Parabolic','Linear Polynomial','Exp. Polynomial']
 OLDESCAPE = 0
 MAX_ATTENUATION = 1.0E-300
+USE_FISX = True
+
+
+def make_newPyDict(fisxDict):
+
+    newPyDict = {}
+
+    for elementfamily in fisxDict.keys():
+        pyElementfamily = elementfamily.split()[0]
+        whichline = elementfamily.split()[1] + " xrays"
+
+        if pyElementfamily not in newPyDict.keys():
+            newPyDict[pyElementfamily]= {}
+            newPyDict[pyElementfamily]["rates"] = {}
+            newPyDict[pyElementfamily]["rays"] = []
+
+        newPyDict[pyElementfamily][whichline] = []
+
+        for layer in fisxDict[elementfamily].keys():
+
+            for line in fisxDict[elementfamily][layer].keys():
+
+                use_leadline = False
+                use_separatek = False
+                if elementfamily.endswith("L") :
+                    use_leadline = True
+                if ("Ka" in whichline) or ("Kb" in whichline):
+                    use_separatek = True
+
+                # create list of rays
+                # comment out "if "esc"" statement if including escape peaks
+
+                if use_leadline:
+                    line_final = line + "*"
+                elif use_separatek:
+                    line_final = line + whichline.split()[0][1]
+                else:
+                    line_final = line
+
+                if "esc" not in line:
+
+                    newPyDict[pyElementfamily][whichline].append(line_final)
+
+                    if line_final not in newPyDict[pyElementfamily].keys():
+                        newPyDict[pyElementfamily][line_final] = {}
+
+                    # store the data
+                    for observable in fisxDict[elementfamily][layer][line].keys():
+
+                        if observable not in newPyDict[pyElementfamily][line_final].keys() and (
+                                        observable == "rate" or observable == "energy"):
+                            newPyDict[pyElementfamily][line_final][observable] = 0
+
+                        if observable == "rate":
+                            newPyDict[pyElementfamily][line_final][observable] += fisxDict[elementfamily][layer][line][
+                                observable]
+
+                        elif observable == "energy":
+                            newPyDict[pyElementfamily][line_final][observable] = fisxDict[elementfamily][layer][line][
+                                observable]
+
+        # store cumulative rates
+        newPyDict[pyElementfamily]["rates"][whichline] = sum_rates(newPyDict[pyElementfamily], whichline)
+        # store list of rays
+        # ex. "rays": [L1 xrays, L2 xrays, L3 xrays]
+        for key in newPyDict[pyElementfamily].keys():
+            if "xrays" in key:
+                newPyDict[pyElementfamily]["rays"].append(key)
+
+
+    return newPyDict
+
+def make_newPyDicts(fisxDict):
+
+    newPyDict = {}
+    escDict = {}
+
+    for elementfamily in fisxDict.keys():
+        pyElementfamily = elementfamily.split()[0]
+        whichline = elementfamily.split()[1] + " xrays"
+
+        if pyElementfamily not in newPyDict.keys():
+            newPyDict[pyElementfamily] = {}
+            newPyDict[pyElementfamily]["rates"] = {}
+            newPyDict[pyElementfamily]["rays"] = []
+            newPyDict[pyElementfamily]["mass fraction"] = None
+
+        if elementfamily not in escDict.keys():
+            escDict[elementfamily] = {}
+
+        newPyDict[pyElementfamily][whichline] = []
+
+        for layer in fisxDict[elementfamily].keys():
+
+            for line in fisxDict[elementfamily][layer].keys():
+
+                use_leadline = False
+                use_separatek = False
+                escapepeak = False
+                if elementfamily.endswith("L") :
+                    use_leadline = True
+                if ("Ka" in whichline) or ("Kb" in whichline):
+                    use_separatek = True
+                if "esc" in line:
+                    escapepeak = True
+
+                if use_leadline:
+                    line_final = line + "*"
+                if use_separatek:
+                    line_final = line + whichline.split()[0][1]
+                if escapepeak:
+                    #line_final = line[:-3]
+                    line_final = line.replace("esc", "")
+                elif (not use_leadline) and (not use_separatek) and (not escapepeak):
+                    line_final = line
+
+                #for esc peak dict
+                if escapepeak:
+                    if line_final.split()[0] not in escDict[elementfamily].keys():
+                        escDict[elementfamily][line_final.split()[0]] = []
+
+                    energy = fisxDict[elementfamily][layer][line]["energy"]
+                    rate = fisxDict[elementfamily][layer][line]["rate"]
+                    label = (line_final.split()[1]).replace("_" , " ")
+
+                    escDict[elementfamily][line_final.split()[0]].append([energy, rate, label])
+
+                # for pymca compatible dict
+                else:
+                    # store list of rays ie [K xrays, L xrays, ...]
+                    newPyDict[pyElementfamily][whichline].append(line_final)
+
+                    if line_final not in newPyDict[pyElementfamily].keys():
+                        newPyDict[pyElementfamily][line_final] = {}
+
+                    # store the data
+                    for observable in fisxDict[elementfamily][layer][line].keys():
+
+                        if observable not in newPyDict[pyElementfamily][line_final].keys() and (
+                                        observable == "rate" or observable == "energy"):
+                            newPyDict[pyElementfamily][line_final][observable] = 0
+
+                        if observable == "rate":
+                            newPyDict[pyElementfamily][line_final][observable] += fisxDict[elementfamily][layer][line][
+                                observable]
+
+                        elif observable == "energy":
+                            newPyDict[pyElementfamily][line_final][observable] = fisxDict[elementfamily][layer][line][
+                                observable]
+
+                        elif observable == "massFraction":
+                            if newPyDict[pyElementfamily]["mass fraction"] is None:
+                                if fisxDict[elementfamily][layer][line][observable] == 0.0 :
+                                    newPyDict[pyElementfamily]["mass fraction"] = 1.0
+                                else:
+                                    newPyDict[pyElementfamily]["mass fraction"] = fisxDict[elementfamily][layer][line][observable]
+
+        #because of multilayer,lines will have info stored for layer 0 and 1 in separate places - need to sum rates
+        for line in escDict[elementfamily].keys():
+            for i in range(len(escDict[elementfamily][line])):
+                for x in range(1, len(escDict[elementfamily][line])):
+                    try:
+                        if escDict[elementfamily][line][i][2] == escDict[elementfamily][line][i+x][2] :
+                            escDict[elementfamily][line][i][1] += escDict[elementfamily][line][i+x][1]
+                            (escDict[elementfamily][line]).pop(i+x)
+                    except IndexError:
+                        break
+
+        # store cumulative rates
+        newPyDict[pyElementfamily]["rates"][whichline] = sum_rates(newPyDict[pyElementfamily], whichline)
+
+        # store list of rays
+        # ex. "rays": [L1 xrays, L2 xrays, L3 xrays]
+        for key in newPyDict[pyElementfamily].keys():
+            if "xrays" in key:
+                newPyDict[pyElementfamily]["rays"].append(key)
+
+
+    return (newPyDict, escDict)
+    # unpack these later
+
+
+def sum_rates(dict, string):
+
+    total_rate = 0.0
+    use_separatek = False
+    if string.split()[0] == "Ka" or string.split()[0] == "Kb":
+        group = string.split()[0][0]
+        use_separatek = True
+    else:
+        group = string.split()[0]
+
+    for line in dict.keys():
+
+        if line.startswith(group):
+            if use_separatek and (line[-1] == string.split()[0][1]):
+
+                try:
+                    total_rate += dict[line]["rate"]
+
+                except (TypeError, KeyError):
+                    continue
+
+            elif not use_separatek:
+
+                try:
+                    total_rate += dict[line]["rate"]
+
+                except (TypeError, KeyError):
+                    continue
+
+            else:
+                continue
+
+    return total_rate
+
+
 class McaTheory(object):
     def __init__(self, initdict=None, filelist=None, **kw):
         self.ydata0  = None
@@ -295,6 +512,7 @@ class McaTheory(object):
                             multilayerlist.append(self.config['multilayer'][layer][1:])
 
         if (maxenergy is not None) and usematrix:
+          # print ("check if")
           #sort the peaks by atomic number
           data  = []
           for element in self.config['peaks'].keys():
@@ -316,6 +534,7 @@ class McaTheory(object):
           PEAKS0       = []
           PEAKS0NAMES  = []
           PEAKS0ESCAPE = []
+          PEAKS0ESCAPE1 = []
           PEAKSW=[]
           if self.config['fit']['fitfunction'] == 0:
               HYPERMET =  self.config['fit']['hypermetflag']
@@ -330,8 +549,10 @@ class McaTheory(object):
                                         item[1][1].lower())
                 else:
                     elementsList.append(item[1][0].upper())
-          #import time
-          #t0=time.time()
+
+          import time
+          t0=time.time()
+
           if matrix[0].upper() != "MULTILAYER":
               multilayer = [matrix * 1]
           else:
@@ -342,23 +563,31 @@ class McaTheory(object):
                   text += "If you used the graphical interface,\n"
                   text += "Please check the MATRIX tab"
                   raise ValueError(text)
-          self._fluoRates=Elements.getMultilayerFluorescence(multilayer,
-                                 energylist,
-                                 layerList = None,
-                                 weightList = energyweight,
-                                 flagList = energyflag,
-                                 fulloutput=1,
-                                 attenuators=attenuatorlist,
-                                 alphain = alphain,
-                                 alphaout = alphaout,
-                                 #elementsList = elementsList,
-                                 elementsList = data,
-                                 cascade = True,
-                                 detector=detector,
-                                 funnyfilters=funnyfilters,
-                                 beamfilters=filterlist,
-                                 forcepresent = 1)
-          dict = self._fluoRates[0]
+
+          print("Using fisx = ", USE_FISX)
+          if not USE_FISX:
+              self._fluoRates=Elements.getMultilayerFluorescence(multilayer,
+                                      energylist,
+                                      layerList = None,
+                                      weightList = energyweight,
+                                      flagList = energyflag,
+                                      fulloutput=1,
+                                      attenuators=attenuatorlist,
+                                      alphain = alphain,
+                                      alphaout = alphaout,
+                                      #elementsList = elementsList,
+                                      elementsList = data,
+                                      cascade = True,
+                                      detector=detector,
+                                      funnyfilters=funnyfilters,
+                                      beamfilters=filterlist,
+                                      forcepresent = 1)
+              dict = self._fluoRates[0]
+          # dict2 = self._fluoRates[1]
+
+          # for Bethany to test getMultilayerFluorescence
+
+          # pyDict = self._fluoRates[0]
 
           # this will not be needed once fisx replaces the Elements module
           if 'fisx' in self.config:
@@ -379,18 +608,79 @@ class McaTheory(object):
           # the correction is to be applied layer by layer.
           # TODO:That implies the future use of fisx library for *everything*
 
-          #print "getMatrixFluorescence elapsed = ",time.time()-t0
+          if USE_FISX:
+              # Bethany getting fisx output
+              self._fluoRates2 = FisxHelper.getMultilayerFluorescence(multilayer,
+                                     energylist,
+                                     layerList = None,
+                                     weightList = energyweight,
+                                     flagList = energyflag,
+                                     fulloutput=1,
+                                     beamFilters=filterlist,
+                                     elementsList=data,
+                                     attenuatorList = attenuatorlist,
+                                     alphaIn = alphain,
+                                     alphaOut = alphaout,
+                                     secondary=0,
+                                     #elementsList = elementsList,
+                                     cascade = True,
+                                     detector = detector,
+                                     elementsFromMatrix=False)
+
+
+              _fluoRates, escDict = make_newPyDicts(copy.deepcopy(self._fluoRates2))
+              self._fluoRates = [_fluoRates, _fluoRates]
+              dict = self._fluoRates[0]
+              fisxDict = self._fluoRates2
+              import json
+              outputfile = open('dictfile.txt', 'w')
+              f = json.dumps(fisxDict, sort_keys=True, indent=4)
+              # outputfile.write(p)
+              outputfile.write(f)
+          # p = json.dumps(pyDict, sort_keys=True, indent=4)
+          # p2 =  json.dumps(dict2, sort_keys=True, indent=4)
+          f = json.dumps(fisxDict, sort_keys=True, indent=4)
+          # for resultItem in self._fluoRates[1:]:
+          #     print(" Item ")
+          #     print(json.dumps(resultItem, sort_keys=True, indent=4))
+
+          outputfile = open('dictfile.txt', 'w')
+          #
+          # outputfile.write(p)
+          outputfile.write(f)
+          # outputfile.write(p2)
+          # print ("pyDict = %s" %p)
+          # print ("fisxDict = %s" %f)
+
+          print ("getMatrixFluorescence elapsed = ",time.time()-t0)
+
+          # import pprint
+          # pprint.pprint(data)
+
+          import time
+          t1 = time.time()
+
           for item in data:
             newpeaks      = []
             newpeaksnames = []
             element = item[1]
+            fisxfamily = item[1] + " " + item[2]
             if len(element) > 1:
                     ele = element[0:1].upper()+element[1:2].lower()
             else:
                     ele = element.upper()
             rays= item[2] +' xrays'
             if not rays in dict[ele]['rays']:continue
-            for transition in dict[ele][rays]:
+            if 0:
+               newpeaks = [[dict[ele][transition]['rate'],
+                                         dict[ele][transition]['energy'],
+                                         numpy.sqrt(noise * noise + \
+                                          0.00385 * dict[ele][transition]['energy'] * fano * 2.3548 * 2.3548),
+                                         0.0] for transition in dict[ele][rays] if dict[ele][transition] ["rate"] > 0]
+               newpeaksnames = [transition for transition in dict[ele][rays] if dict[ele][transition] ["rate"] > 0]
+
+            else:
+              for transition in dict[ele][rays]:
                 if dict[ele][transition]['rate'] > 0.0:
                     fwhm = numpy.sqrt(noise*noise + \
                         0.00385 *dict[ele][transition]['energy']* fano*2.3548*2.3548)
@@ -406,10 +696,10 @@ class McaTheory(object):
 
 #######################################
             #--- renormalize to account for filter effects ---
-            div = sum([x[0] for x in newpeaks])
+            division = sum([x[0] for x in newpeaks])
             try:
                 for i in range(len(newpeaks)):
-                    newpeaks[i][0] /= div
+                    newpeaks[i][0] /= division
             except ZeroDivisionError:
                 text  = "Intensity of %s %s is zero\n"% (ele, rays)
                 text += "Too high attenuation?"
@@ -419,7 +709,8 @@ class McaTheory(object):
             div=[[newpeaks[i][1],newpeaks[i][0],newpeaksnames[i]] for i in range(len(newpeaks))]
             div.sort()
             #print "before = ",len(newpeaksnames)
-            div = Elements._filterPeaks(div, ethreshold = deltaonepeak,
+            if not USE_FISX:
+                div = Elements._filterPeaks(div, ethreshold = deltaonepeak,
                                             ithreshold = 0.0005,
                                             #ithreshold = ithreshold,
                                             nthreshold = None,
@@ -435,13 +726,45 @@ class McaTheory(object):
             (r,c)=(numpy.array(newpeaks)).shape
             PEAKS0ESCAPE.append([])
             _nescape_ = 0
-            if self.config['fit']['escapeflag']:
-                for i in range(len(newpeaks)):
-                    _esc_ = Elements.getEscape([detele,1.0,1.0], newpeaks[i][1],
-                                        ethreshold=ethreshold, ithreshold=ithreshold,
-                                        nthreshold=nthreshold)
-                    PEAKS0ESCAPE[-1].append(_esc_)
-                    _nescape_ += len(_esc_)
+
+            #t3 = time.time()
+            #Original way to get escape peaks BETHANY COMMENT
+            if not USE_FISX:
+                if self.config['fit']['escapeflag']:
+                    testidx = 0
+                    for i in range(len(newpeaks)):
+                        _esc_ = Elements.getEscape([detele,1.0,1.0], newpeaks[i][1],
+                                            ethreshold=ethreshold, ithreshold=ithreshold,
+                                            nthreshold=nthreshold)
+                        PEAKS0ESCAPE[-1].append(_esc_)
+                        _nescape_ += len(_esc_)
+                        if ele == "Cr":
+                            print(ele, "PYMCA ESCAPE",  _esc_)
+                            testidx += 1
+            else:
+                div2 = [escDict[fisxfamily][transition] for transition in escDict[fisxfamily].keys()]
+                div2.sort()
+                #trying Bethany's method
+                if self.config['fit']['escapeflag']:
+                    testidx = 0
+                    for i in div2:
+                        _esc_ = i # [[x[0], x[1]/(division), x[2]] for x in i]
+                        _esc_.sort()
+                        _esc_ = Elements._filterPeaks(_esc_, ethreshold=None,
+                                              ithreshold=None,
+                                              nthreshold=None,
+                                               absoluteithreshold=True,
+                                               keeptotalrate=False)
+                        _nescape_ += len(_esc_)
+                        PEAKS0ESCAPE[-1].append(_esc_)
+                        if ele == "Cr":
+                            print(ele, "FISX ESCAPE",  _esc_)
+                            testidx += 1
+
+            #print("Total Number of peaks ", len(newpeaks))
+            #print("Total umnber of escape peaks ", _nescape_)
+
+            #print ("get escaped:" + str(time.time() - t3))
             PEAKS0.append(numpy.array(newpeaks))
             PEAKS0NAMES.append(newpeaksnames)
             #print ele,"PEAKS0ESCAPE[-1] = ",PEAKS0ESCAPE[-1]
@@ -465,8 +788,26 @@ class McaTheory(object):
                     PEAKSW.append(numpy.ones((r,3+5),numpy.float))
 
 
-#######################################
+          # import pprint
+          # # print("PEAKS0: " )
+          # # pprint.pprint(PEAKS0)
+          # print("PEAKS0ESCAPE: ")
+          # print ("nescape = ", _nescape_)
+          # pprint.pprint(PEAKS0ESCAPE)
+          # print("PEAKS0ESCAPE1: ")
+          # print ("nescape1 = ", _nescape1_)
+          # pprint.pprint(PEAKS0ESCAPE1)
+          # # # print("PEAKSW: ")
+          # # pprint.pprint(PEAKSW)
+          print ("build peak description elapsed = ",time.time()-t1)
+
+
+
+##################################################
+# BETHANY STOP!!!!!!
+
         else:
+            # print ("check else")
             if usematrix and (maxenergy is None):
                 text  = "Invalid energy for matrix configuration.\n"
                 text += "Please check your BEAM parameters."
@@ -493,7 +834,10 @@ class McaTheory(object):
                             data.append([Elements.getz(ele),ele,peak])
 
                 data.sort()
+
                 #build the peaks description
+
+
                 PEAKS0       = []
                 PEAKS0NAMES  = []
                 PEAKS0ESCAPE = []
@@ -624,6 +968,9 @@ class McaTheory(object):
                                     else:
                                         raise ValueError(\
                                             "Invalid excitation energy")
+
+
+
                     #--- renormalize
                     div = sum([x[0] for x in newpeaks])
                     try:
@@ -645,6 +992,7 @@ class McaTheory(object):
                     """
 
                     #--- sort ---
+
                     div=[[newpeaks[i][1],newpeaks[i],newpeaksnames[i]] for i in range(len(newpeaks))]
                     div.sort()
                     newpeaks     =[div[i][1] for i in range(len(div))]
@@ -712,11 +1060,12 @@ class McaTheory(object):
                             for peakname in mixname:
                                 newpeaksnames.append(peakname)
 
+
                     #if ele == "Fe":
                     if 0:
                         for i in range(len(newpeaks)):
                             print(newpeaksnames[i],newpeaks[i])
-                    #print "len newpeaks = ",len(newpeaks)
+                    #print"len newpeaks = ",len(newpeaks)
                     (r,c)=(numpy.array(newpeaks)).shape
                     PEAKS0ESCAPE.append([])
                     _nescape_ = 0
@@ -748,6 +1097,7 @@ class McaTheory(object):
                                                             numpy.float))
                         else:
                             PEAKSW.append(numpy.ones((r,3+5),numpy.float))
+
             elif (not usematrix) and (len(energylist) > 1):
                 raise ValueError("Multiple energies require a matrix definition")
             else:
@@ -757,6 +1107,9 @@ class McaTheory(object):
                 raise ValueError("Unhandled Sample Matrix and Energy combination")
 ###############
         #add scatter peak
+        import time
+        t2 = time.time()
+
         if energylist is not None:
             if len(energylist) and \
                (self.config['fit']['scatterflag']):
@@ -819,6 +1172,9 @@ class McaTheory(object):
                                                                         numpy.float))
                                     else:
                                         PEAKSW.append(numpy.ones((r,3+5),numpy.float))
+
+        # print ("build scatter peak time elapsed = ", time.time()-t2)
+
 #########
         PARAMETERS=['Zero','Gain','Noise','Fano','Sum']
         CONTINUUM    = self.config['fit']['continuum']
@@ -928,6 +1284,14 @@ class McaTheory(object):
                 self.datatofit = numpy.concatenate((self.xdata,
                                 self.ydata, self.sigmay),1)
                 self.laststrip = 0
+
+
+        # Bethany inserting a thing to get result of getmultilayerfluorescene returned
+        # if 'pyDict' in locals() and 'fisxDict' in locals():
+        #     return (pyDict, fisxDict)
+        # else:
+        return
+
 
     def setdata(self, *var, **kw):
         print("ClassMcaTheory.setdata deprecated, please use setData")
@@ -1358,6 +1722,8 @@ class McaTheory(object):
         PEAKSW = self.PEAKSW
         PARAMETERS = self.PARAMETERS
         FASTER = self.FASTER
+
+
         for i in range(len(param[self.NGLOBAL:])):
             if self.ESCAPE:
                 #area = param[NGLOBAL+i]
@@ -2200,6 +2566,7 @@ class McaTheory(object):
         return result
 
     def digestresult(self,outfile=None, info=None):
+        print("info = ", info)
         param = self.fittedpar
         xw    = numpy.ravel(self.xdata)
         if self.STRIP:
@@ -2374,6 +2741,13 @@ class McaTheory(object):
                     (r,c) = (self.PEAKS0[i]).shape
                     #result[group]['escapepeaks'] = self.PEAKS0NAMES[i]
                     for _esc_group in self.PEAKS0ESCAPE[i]:
+                        if ii >= len(result[group]['peaks']):
+                            print(" group = ", group, "_esc_group = ",_esc_group, " ii = ", ii)
+                            print("Problem with group = ", group)
+                            print("NPeaks = ", len(result[group]['peaks']), "Peaks = ", result[group]['peaks'])
+                            print("Nscape groups = ", len(self.PEAKS0ESCAPE[i]))
+                            print("Values = ", self.PEAKS0ESCAPE[i])
+                            continue
                         peak0 = result[group]['peaks'][ii]
                         #if group == 'Fe K':print "_esc_group = ",_esc_group
                         for esc_line in _esc_group:

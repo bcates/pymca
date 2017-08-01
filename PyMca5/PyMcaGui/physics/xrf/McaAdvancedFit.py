@@ -79,7 +79,7 @@ from PyMca5.PyMcaGui import PyMcaPrintPreview
 from PyMca5.PyMcaCore import PyMcaDirs
 from PyMca5.PyMcaIO import ConfigDict
 from PyMca5.PyMcaGui import CalculationThread
-DEBUG = 0
+DEBUG = 1
 if DEBUG:
     print("############################################")
     print("#    McaAdvancedFit is in DEBUG mode %s     #" % DEBUG)
@@ -714,6 +714,7 @@ class McaAdvancedFit(qt.QWidget):
                     msg = qt.QMessageBox(self)
                     msg.setIcon(qt.QMessageBox.Critical)
                     msg.setText("Concentrations error: %s" % sys.exc_info()[1])
+	            msg.setDetailedText(traceback.format_exc())
                     msg.exec_()
                     self.mainTab.setCurrentIndex(0)
         elif str(self.mainTab.tabText(self.mainTab.currentIndex())).upper() == "TABLE":
@@ -2010,7 +2011,8 @@ class McaAdvancedFit(qt.QWidget):
                             msg = qt.QMessageBox(self)
                             msg.setIcon(qt.QMessageBox.Critical)
                             msg.setText("Concentrations Error: %s" % (sys.exc_info()[1]))
-                            msg.exec_()
+                            msg.setDetailedText(traceback.format_exc())
+			    msg.exec_()
                             return
         if str(self.mainTab.tabText(self.mainTab.currentIndex())).upper() == 'DIAGNOSTICS':
             try:

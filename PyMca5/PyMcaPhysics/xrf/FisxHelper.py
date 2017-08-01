@@ -120,10 +120,9 @@ def getMultilayerFluorescence(multilayerSample,
                               cascade = None,
                               detector= None,
                               elementsFromMatrix=False,
-                              secondary=None,
+                              secondary=0,
                               materials=None,
                               secondaryCalculationLimit=None):
-
     if secondaryCalculationLimit is None:
         secondaryCalculationLimit=0.0
 
@@ -228,8 +227,20 @@ def getMultilayerFluorescence(multilayerSample,
     else:
         useGeometricEfficiency = 0
 
+    if elementsList in [None, []]:
+        raise ValueError("Element list not specified")
+
     matrixElementsList = []
-    for peak in elementsList:
+    if len(elementsList):
+        if len(elementsList[0]) == 3:
+            # PyMca can send [atomic number, element, peak]
+            actualElementList = [x[1] + " " + x[2] for x in elementsList]
+        elif len(elementsList[0]) == 2:
+            actualElementList = [x[0] + " " + x[1] for x in elementsList]
+        else:
+            actualElementList = elementsList
+
+    for peak in actualElementList:
         ele = peak.split()[0]
         considerIt = False
         for layer in multilayerSample:
@@ -242,10 +253,6 @@ def getMultilayerFluorescence(multilayerSample,
 
     if elementsFromMatrix:
         elementsList = matrixElementsList
-
-    # the detector distance and solid angle ???
-    if elementsList in [None, []]:
-        raise ValueError("Element list not specified")
 
     if len(elementsList):
         if len(elementsList[0]) == 3:
